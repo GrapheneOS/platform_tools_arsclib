@@ -1,0 +1,19 @@
+java_binary_host {
+    name: "arsclib",
+    java_version: "21",
+
+    srcs: [
+        ":framework-metalava-annotations",
+        "java/**/*.java",
+    ],
+
+    main_class: "org.grapheneos.arsclib.Main",
+
+    required: ["aapt2"],
+
+    static_libs: [
+        "aapt2_proto_java",
+        "gson",
+        "guava",
+    ],
+}
