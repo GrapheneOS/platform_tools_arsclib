@@ -28,6 +28,31 @@ class RItem {
         };
     }
 
+    static boolean shouldMarkAsNonFormatted(String s) {
+        int idx = s.indexOf('%');
+        if (idx < 0 || idx == s.length() - 1) {
+            return false;
+        }
+        int idx2 = s.indexOf('%', idx + 1);
+        if (idx2 < 0) {
+            return false;
+        }
+        if (idx == idx2 - 1) {
+            return false;
+        }
+
+        if (idx2 == s.length() - 1) {
+            return true;
+        }
+
+        return !isAsciiDigit(s, idx + 1) || !isAsciiDigit(s, idx2 + 1);
+    }
+
+    private static boolean isAsciiDigit(String s, int idx) {
+        char c = s.charAt(idx);
+        return c >= '0' && c <= '9';
+    }
+
     static String maybeQuote(String s) {
         if (s.isEmpty()) {
             return s;

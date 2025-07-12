@@ -169,7 +169,15 @@ public class ApkConverter {
             valueElem.setAttribute("name", rentry.entry.entry.getName());
             Resources.Value value = rentry.entry.configValue.getValue();
             switch (value.getValueCase()) {
-                case ITEM -> valueElem.setTextContent(RItem.asString(apk, value.getItem()));
+                case ITEM -> {
+                    Resources.Item item = value.getItem();
+                    valueElem.setTextContent(RItem.asString(apk, item));
+                    if (item.getValueCase() == Resources.Item.ValueCase.STR) {
+                        if (RItem.shouldMarkAsNonFormatted(item.getStr().getValue())) {
+                            valueElem.setAttribute("formatted", "false");
+                        }
+                    }
+                }
                 case COMPOUND_VALUE -> RCompoundValue.toXml(apk, value.getCompoundValue(), valueElem);
                 default -> throw new RuntimeException(value.toString());
             }
