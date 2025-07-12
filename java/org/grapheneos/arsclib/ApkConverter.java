@@ -10,6 +10,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -42,6 +43,8 @@ public class ApkConverter {
     private Filters exclusionFilter = new Filters();
     private Filters inclusionFilter = new Filters();
 
+    @CheckForNull private SyntheticOverlaySpec syntheticOverlaySpec;
+
     // path -> file contents
     private final HashMap<String, String> generatedResourceMaps = new HashMap<>();
     private AtomicInteger resourceMapIndex = new AtomicInteger(1);
@@ -49,14 +52,23 @@ public class ApkConverter {
     private final Set<REntry> entriesToInclude = new HashSet<>();
     private final Set<REntry> fileEntriesToInclude = new HashSet<>();
 
+    record SyntheticOverlaySpec(
+            List<String> sourcePaths,
+            String moduleName,
+            String targetPackage,
+            @CheckForNull String targetName,
+            Map<String, Set<String>> resourcesToInclude // type name -> resource names
+    ) {}
     private ApkConverter(Apk apk) {
         this.apk = apk;
     }
 
-    public static String convert(Apk apk, ConversionCommand cmd, Path destination) {
+    public static String convert(Apk apk, ConversionCommand cmd,
+                                 @CheckForNull SyntheticOverlaySpec soSpec, Path destination) {
         var c = new ApkConverter(apk);
         c.exclusionFilter = cmd.exclusionFilters;
         c.inclusionFilter = cmd.inclusionFilters;
+        c.syntheticOverlaySpec = soSpec;
         try {
             return c.convertEntries(destination);
         } catch (Exception e) {
@@ -110,15 +122,25 @@ public class ApkConverter {
 
     @CheckForNull
     String convertEntries(Path destination) throws Exception {
-        Resources.XmlNode androidManifest = processManifest();
-        if (androidManifest == null) {
-            return null;
+        String manifestString;
+        String moduleName;
+        SyntheticOverlaySpec soSpec = this.syntheticOverlaySpec;
+        if (soSpec != null) {
+            moduleName = soSpec.moduleName();
+            manifestString = createSyntheticOverlayManifest(soSpec);
+            processSyntheticOverlay(soSpec);
+        } else {
+            Resources.XmlNode androidManifest = processManifest();
+            if (androidManifest == null) {
+                return null;
+            }
+            moduleName = getNameWithoutExtension(apk.fileName);
+            manifestString = RXmlConverter.convert(androidManifest, apk);
         }
 
-        Path dir = destination.resolve(apk.fileName.substring(0, apk.fileName.length() - ".apk".length()));
+        Path dir = destination.resolve(moduleName);
         Files.createDirectories(dir);
 
-        String manifestString = RXmlConverter.convert(androidManifest, apk);
         Files.writeString(dir.resolve(ANDROID_MANIFEST_NAME), manifestString, CREATE_NEW);
 
         HashMap<String, /* elements */ ArrayList<REntry>> elementsByConfig = new HashMap<>();
@@ -142,14 +164,15 @@ public class ApkConverter {
 
         writeFiles(fileEntriesToInclude, resDir);
 
-        String partition = apk.resourceProcessor.rootPath().relativize(apk.path).getName(0).toString();
+        String partition = soSpec != null ?
+                "product" :
+                apk.resourceProcessor.rootPath().relativize(apk.path).getName(0).toString();
         String partitionBp = switch (partition) {
             case "product" -> "product";
             case "vendor" -> "soc";
             default -> throw new IllegalStateException(apk.path.toString());
         };
 
-        String moduleName = getNameWithoutExtension(apk.path.toString());
         String androidBp = "runtime_resource_overlay { name: \"" + moduleName + "\", "
                 + partitionBp + "_specific: true, }";
         Files.writeString(dir.resolve("Android.bp"), androidBp);
@@ -662,5 +685,88 @@ public class ApkConverter {
             }
             rootBuilder.addAttribute(attr);
         }
+    }
+
+    private void processSyntheticOverlay(SyntheticOverlaySpec spec) {
+        Resources.ResourceTable table = apk.selfResourceTable.table;
+
+        verify(table.getPackageCount() == 1);
+
+        Resources.Package pkg = table.getPackage(0);
+        verify(pkg.getPackageId().getId() == Constants.SELF_PACKAGE_ID ||
+                pkg.getPackageName().equals(Constants.ANDROID_PACKAGE_NAME)
+                        && pkg.getPackageId().getId() == Constants.ANDROID_PACKAGE_ID);
+
+        HashMap<String, Set<String>> resourcesToInclude = new HashMap<>(spec.resourcesToInclude());
+
+        var overlayTarget = new OverlayTarget(spec.targetPackage(), spec.targetName());
+
+        for (Resources.Type type : pkg.getTypeList()) {
+            Set<String> entryNames = resourcesToInclude.remove(type.getName());
+            if (entryNames == null) {
+                continue;
+            }
+
+            String typeStem = overlayTarget.createSpecStem(normalizedTypeName(type));
+
+            for (Resources.Entry entry : type.getEntryList()) {
+                String name = entry.getName();
+                if (!entryNames.remove(name)) {
+                    if (entryNames.isEmpty()) {
+                        break;
+                    }
+                    continue;
+                }
+                String baseSpec = typeStem + "/" + name;
+
+                boolean includedAny = processConfigValues(baseSpec, type, entry);
+                if (!includedAny) {
+                    System.err.println(spec.moduleName + ": no config values were included for " + baseSpec);
+                }
+            }
+
+            if (!entryNames.isEmpty()) {
+                System.err.println(spec.moduleName + ": missing " + type.getName()
+                        + " entries: " + Arrays.toString(entryNames.toArray()));
+            }
+
+            if (resourcesToInclude.isEmpty()) {
+                break;
+            }
+        }
+
+        if (!resourcesToInclude.isEmpty()) {
+            for (Map.Entry<String, Set<String>> entry : resourcesToInclude.entrySet()) {
+                System.err.println(spec.moduleName + ": missing " + entry.getKey()
+                        + " entries: " + Arrays.toString(entry.getValue().toArray()));
+            }
+        }
+    }
+
+    private String createSyntheticOverlayManifest(SyntheticOverlaySpec spec) {
+        String packageName = spec.targetPackage() + '.' + spec.moduleName();
+
+        Document doc = XmlUtils.createDocument();
+        Element manifest = doc.createElement("manifest");
+        manifest.setAttribute("package", packageName);
+
+        Element app = doc.createElement("application");
+        setAndroidAttr(app, "hasCode", "false");
+        manifest.appendChild(app);
+
+        Element overlay = doc.createElement("overlay");
+        setAndroidAttr(overlay, "isStatic", "true");
+        setAndroidAttr(overlay, "priority", "0");
+        setAndroidAttr(overlay, "targetPackage", spec.targetPackage());
+        if (spec.targetName() != null) {
+            setAndroidAttr(overlay, "targetName", spec.targetName());
+        }
+        manifest.appendChild(overlay);
+        doc.appendChild(manifest);
+        return XmlUtils.format(doc);
+    }
+
+    private static void setAndroidAttr(Element elem, String name, String value) {
+        elem.setAttributeNS(ANDROID_NAMESPACE_URI, "android:" + name, value);
     }
 }

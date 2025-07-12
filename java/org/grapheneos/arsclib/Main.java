@@ -6,10 +6,12 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.stream.Stream;
 
+import static com.google.common.base.Verify.verify;
 import static com.google.common.base.Verify.verifyNotNull;
 
 public class Main {
@@ -49,7 +51,7 @@ public class Main {
                             } catch (IOException e) {
                                 throw new RuntimeException(e);
                             }
-                            String moduleName = ApkConverter.convert(apk, cmd, destination);
+                            String moduleName = ApkConverter.convert(apk, cmd, null, destination);
                             if (moduleName != null) {
                                 synchronized (moduleList) {
                                     moduleList.add(moduleName);
@@ -57,6 +59,33 @@ public class Main {
                             }
                         });
             }
+
+            cmd.syntheticOverlays.stream().parallel().forEach(soSpec -> {
+                Path path = null;
+                for (String sourcePath : soSpec.sourcePaths()) {
+                    Path candidate = rootPath.resolve(sourcePath);
+                    if (Files.isRegularFile(candidate)) {
+                        path = candidate;
+                        break;
+                    }
+                }
+                if (path == null) {
+                    throw new RuntimeException(soSpec.moduleName() + ": no available sourcePath" +
+                            ", tried: " + Arrays.toString(soSpec.sourcePaths().toArray()));
+                }
+                Apk apk;
+                try {
+                    apk = rp.loadApk(path.toString());
+                } catch (IOException e) {
+                    throw new RuntimeException(e);
+                }
+                String moduleName = ApkConverter.convert(apk, cmd, soSpec, destination);
+                verify(moduleName != null);
+                verify(moduleName.equals(soSpec.moduleName()));
+                synchronized (moduleList) {
+                    moduleList.add(moduleName);
+                }
+            });
         }
         moduleList.sort(String::compareTo);
         Files.writeString(Path.of(cmd.outModuleListPath), String.join("\n", moduleList));
