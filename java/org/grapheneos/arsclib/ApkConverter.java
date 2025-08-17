@@ -52,6 +52,8 @@ public class ApkConverter {
     private final Set<REntry> entriesToInclude = new HashSet<>();
     private final Set<REntry> fileEntriesToInclude = new HashSet<>();
 
+    private final ArrayList<String> unknownEntries = new ArrayList<>();
+
     record SyntheticOverlaySpec(
             List<String> sourcePaths,
             String moduleName,
@@ -136,6 +138,14 @@ public class ApkConverter {
             }
             moduleName = getNameWithoutExtension(apk.fileName);
             manifestString = RXmlConverter.convert(androidManifest, apk);
+        }
+
+        if (!unknownEntries.isEmpty()) {
+            var b = new StringBuilder("unknown entries:\n");
+            for (String s : unknownEntries) {
+                b.append("      - ").append(s).append('\n');
+            }
+            System.out.print(b);
         }
 
         Path dir = destination.resolve(moduleName);
@@ -642,17 +652,7 @@ public class ApkConverter {
         }
         String s = b.toString();
 
-        if (exclusionFilter.test(s)) {
-            return false;
-        }
-        if (inclusionFilter.test(s)) {
-            return true;
-        }
-        boolean includeByDefault = true;
-        if (includeByDefault) {
-            System.out.println("including unknown entry: " + escapeYamlListItem(s));
-        }
-        return includeByDefault;
+        return shouldIncludePrecise(s);
     }
 
     private boolean shouldIncludePrecise(String spec) {
@@ -664,7 +664,7 @@ public class ApkConverter {
         }
         boolean includeByDefault = true;
         if (includeByDefault) {
-            System.out.println("including unknown entry: " + escapeYamlListItem(spec));
+            unknownEntries.add(escapeYamlListItem(spec));
         }
         return includeByDefault;
     }
