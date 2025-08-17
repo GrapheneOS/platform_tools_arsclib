@@ -29,7 +29,7 @@ public class Main {
 
         try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
             var rootPath = Path.of(cmd.unpackedOsImageDir);
-            var rp = ResourceProcessor.create(getAapt2Path(), rootPath, executor);
+            var rp = ResourceProcessor.create(cmd.aapt2Path, rootPath, executor);
             var destination = Path.of(cmd.outDir);
 
             try (Stream<Path> fileStream = Files.walk(rootPath)) {
@@ -89,9 +89,5 @@ public class Main {
         }
         moduleList.sort(String::compareTo);
         Files.writeString(Path.of(cmd.outModuleListPath), String.join("\n", moduleList));
-    }
-
-    private static String getAapt2Path() {
-        return Path.of(verifyNotNull(System.getenv("ANDROID_HOST_OUT")), "bin", "aapt2").toString();
     }
 }
