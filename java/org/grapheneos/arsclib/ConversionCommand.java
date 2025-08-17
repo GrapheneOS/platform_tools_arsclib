@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 public class ConversionCommand {
+    String aapt2Path;
     String unpackedOsImageDir;
 
     List<ApkConverter.SyntheticOverlaySpec> syntheticOverlays = new ArrayList<>();
