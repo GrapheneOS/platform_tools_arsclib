@@ -92,7 +92,7 @@ public record ResourceProcessor(String aapt2Path, Path rootPath, Apk frameworkAp
                 "convert",
                 "--for-adevtool",
                 "--output-format",
-                "proto",
+                "proto-adevtool",
                 apkPath.toString(),
                 "-v", // verbose logging
                 "-o",
