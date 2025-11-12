@@ -141,7 +141,7 @@ public class ApkConverter {
         }
 
         if (!unknownEntries.isEmpty()) {
-            var b = new StringBuilder("unknown entries:\n");
+            var b = new StringBuilder("included unknown overlay entries:\n");
             for (String s : unknownEntries) {
                 b.append("      - ").append(s).append('\n');
             }
