@@ -200,6 +200,16 @@ public class ApkConverter {
         entries.stream().parallel().map((REntry rentry) -> {
             Element valueElem = doc.createElement(rentry.normalizedTypeName);
             valueElem.setAttribute("name", rentry.entry.entry.getName());
+            if (rentry.entry.entry.getConfigValueCount() == 1) {
+                if (rentry.normalizedTypeName.equals("string")) {
+                    // translatable=false strings are exempted from the automatic generation of
+                    // pseudo-locale translations (ar-XB and en-XA). This is important since some
+                    // strings are OS config values which are parsed at runtime. If translatable=false
+                    // is missing for such strings, the value parser will crash the OS when the
+                    // current locale is set to a pseudo-locale.
+                    valueElem.setAttribute("translatable", "false");
+                }
+            }
             Resources.Value value = rentry.entry.configValue.getValue();
             switch (value.getValueCase()) {
                 case ITEM -> {
