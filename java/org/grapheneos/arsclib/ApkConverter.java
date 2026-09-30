@@ -179,6 +179,7 @@ public class ApkConverter {
                 apk.resourceProcessor.rootPath().relativize(apk.path).getName(0).toString();
         String partitionBp = switch (partition) {
             case "product" -> "product";
+            case "system_ext" -> "system_ext";
             case "vendor" -> "soc";
             default -> throw new IllegalStateException(apk.path.toString());
         };
