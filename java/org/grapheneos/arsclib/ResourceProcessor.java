@@ -56,7 +56,7 @@ public record ResourceProcessor(String aapt2Path, Path rootPath, Apk frameworkAp
             }
         }
         verify(androidManifestF != null);
-        verify(resTableF != null);
+        verify(resTableF != null, "APK has no resource table (resources.pb); check that you supplied the base APK");
         IndexedResourceTable resTable;
         Resources.XmlNode androidManifest;
         try {

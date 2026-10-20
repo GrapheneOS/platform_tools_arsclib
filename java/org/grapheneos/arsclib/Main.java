@@ -17,8 +17,12 @@ import static com.google.common.base.Verify.verifyNotNull;
 public class Main {
 
     public static void main(String[] args) throws Exception {
+        if (args.length == 1 && args[0].equals("--metadata-json-stdin")) {
+            MetadataCommand.run();
+            return;
+        }
         if (args.length != 1 || !args[0].equals("--json-stdin")) {
-            throw new IllegalArgumentException("expected --json-stdin option");
+            throw new IllegalArgumentException("expected --json-stdin or --metadata-json-stdin option");
         }
 
         var gson = new Gson();
